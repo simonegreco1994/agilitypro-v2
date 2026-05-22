@@ -734,7 +734,7 @@ function render() {
 function renderDashboard() {
   const appOggi = state.appuntamenti.filter(a=>a.data===today() && a.stato!=='saltata').sort((a,b)=>a.ora.localeCompare(b.ora));
   const appProssimi = state.appuntamenti.filter(a=>a.data>today() && a.stato!=='saltata').sort((a,b)=>a.data.localeCompare(b.data)||a.ora.localeCompare(b.ora));
-  const inAttesaList = state.pagamenti.filter(p=>p.stato==='In attesa');
+  const inAttesaList = state.pagamenti.filter(p=>p.stato==='In attesa' && p.data<=today());
   const pagamentiScaduti = state.pagamenti.filter(p => p.stato==='In attesa' && p.data < today());
   const sollecitare = state.iscritti.filter(i => pagamentiScaduti.some(p=>p.iscrittoId===i.id));
 
@@ -808,12 +808,18 @@ function renderDashboard() {
     </div>` : ''}
 
     ${sollecitare.length > 0 ? `<div class="alert-box">
-      <div class="alert-title">🔔 Da sollecitare questo mese</div>
-      ${sollecitare.map(i=>`<div class="list-item" style="padding:6px 0">
-        <span style="font-size:20px">${i.avatar}</span>
-        <div class="item-info"><div class="item-title">${i.nome}</div><div class="item-sub">${i.cane} — ${i.livello}</div></div>
-        <button class="icon-btn" data-wa-pag="${i.id}" title="Sollecita pagamento" style="color:#25D366;font-size:20px">💬</button>
-      </div>`).join('')}
+      <div class="alert-title">🔔 Pagamenti scaduti — da sollecitare</div>
+      ${sollecitare.map(i=>{
+        const pag = pagamentiScaduti.find(p=>p.iscrittoId===i.id);
+        return `<div class="list-item" style="padding:6px 0">
+          <span style="font-size:20px">${i.avatar}</span>
+          <div class="item-info">
+            <div class="item-title">${i.nome}</div>
+            <div class="item-sub">${i.cane} — €${pag?.importo||''} ${pag?.tipo||''} scaduto il ${pag?fmtDate(pag.data):''}</div>
+          </div>
+          <button class="icon-btn" data-wa-pag="${i.id}" title="Sollecita pagamento" style="color:#25D366;font-size:20px">💬</button>
+        </div>`;
+      }).join('')}
     </div>` : '<div class="card" style="text-align:center;color:var(--green);font-size:13px;font-weight:700">✅ Tutti aggiornati con i pagamenti!</div>'}
 
     ${(()=>{
