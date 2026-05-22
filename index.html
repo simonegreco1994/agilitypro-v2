@@ -1667,7 +1667,7 @@ function renderIscritto() {
     // Attiva
     const isIOSPWA = ('standalone' in navigator && navigator.standalone);
     const isSafariNoPWA = /^((?!chrome|android).)*safari/i.test(navigator.userAgent) && !isIOSPWA;
-    if(isSafariNoPWA) { showNotMsg('Apri dall'app in Home Screen per le notifiche.', false); return; }
+    if(isSafariNoPWA) { showNotMsg('Apri dalla Home Screen per le notifiche.', false); return; }
     if(!window.OneSignal) { showNotMsg('Ricarica la pagina e riprova.', false); return; }
     try {
       showNotMsg('Attivazione...');
