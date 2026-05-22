@@ -579,7 +579,10 @@ let unsubscribers = [];
 
 // ── FIRESTORE (per-user paths) ─────────────────────────────────────────────
 // Per iscritti, legge i dati dall'addestratore
-const dataUid = () => state.ruolo === 'iscritto' && state.addestatoreUid ? state.addestatoreUid : state.user.uid;
+const dataUid = () => {
+  if(state.ruolo === 'iscritto' && state.addestatoreUid) return state.addestatoreUid;
+  return state.user.uid;
+};
 
 const userCol = (colName) => collection(db, 'users', dataUid(), colName);
 
@@ -660,6 +663,7 @@ onAuthStateChanged(auth, async (user) => {
     state.user = null;
     state.ruolo = null;
     state.profilo = null;
+    state.addestatoreUid = null;
     state.loaded = false;
     if(unsubscribers.length) { unsubscribers.forEach(u=>u()); unsubscribers.length=0; }
     if(authScreen) authScreen.style.display = 'flex';
@@ -687,8 +691,13 @@ const livelloColor = l => l==='Avanzato' ? 'badge-blue' : l==='Intermedio' ? 'ba
 // ── RENDER ─────────────────────────────────────────────────────────────────
 function render() {
   if(!state.loaded) return;
-  // Iscritto ha interfaccia ridotta
-  if(state.ruolo === 'iscritto') { renderIscritto(); return; }
+  // Iscritto ha interfaccia ridotta — rileggi ruolo dal profilo per sicurezza
+  const ruolo = state.ruolo || state.profilo?.ruolo || 'addestratore';
+  if(ruolo === 'iscritto') {
+    state.ruolo = 'iscritto'; // assicura coerenza
+    state.addestatoreUid = state.addestatoreUid || state.profilo?.addestatoreUid;
+    renderIscritto(); return;
+  }
 
   const main = document.getElementById('main');
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === state.tab));
