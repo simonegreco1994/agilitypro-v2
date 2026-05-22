@@ -616,18 +616,24 @@ const initFirebase = () => {
   const myIscrittoId = (state.ruolo === 'iscritto' && state.profilo?.iscrittoId)
     ? Number(state.profilo.iscrittoId) : null;
 
+  console.log('DEBUG - ruolo:', state.ruolo, 'myIscrittoId:', myIscrittoId, 'uid:', uid);
+
   unsubscribers.push(onSnapshot(collection(db, 'users', uid, 'iscritti'), snap => {
     const tutti = snap.docs.map(d => ({ id: Number(d.id), ...d.data() }));
+    console.log('DEBUG iscritti totali:', tutti.length, tutti.map(i=>i.id));
     state.iscritti = (state.ruolo === 'iscritto' && myIscrittoId)
       ? tutti.filter(i => Number(i.id) === myIscrittoId)
       : tutti;
+    console.log('DEBUG iscritti finali:', state.iscritti.length);
     if(!state.loaded) checkLoaded(); else render();
   }));
   unsubscribers.push(onSnapshot(collection(db, 'users', uid, 'pagamenti'), snap => {
     const tutti = snap.docs.map(d => ({ id: Number(d.id), ...d.data() }));
+    console.log('DEBUG pagamenti totali:', tutti.length, 'ruolo:', state.ruolo, 'myIscrittoId:', myIscrittoId);
     state.pagamenti = (state.ruolo === 'iscritto' && myIscrittoId)
       ? tutti.filter(p => Number(p.iscrittoId) === myIscrittoId)
       : tutti;
+    console.log('DEBUG pagamenti finali:', state.pagamenti.length);
     if(!state.loaded) checkLoaded(); else render();
   }));
   unsubscribers.push(onSnapshot(collection(db, 'users', uid, 'appuntamenti'), snap => {
@@ -1172,6 +1178,7 @@ window.selectAvatar = (btn, av) => {
   btn.classList.add('selected'); window._selAvatar = av;
 };
 window.salvaIscritto = async id => {
+  const vecchio = id ? state.iscritti.find(i=>i.id===id) : null;
   const d = {
     id: id||Date.now(), nome:document.getElementById('f_nome').value, cane:document.getElementById('f_cane').value,
     razza:document.getElementById('f_razza').value, tessera:document.getElementById('f_tessera').value,
@@ -1180,10 +1187,30 @@ window.salvaIscritto = async id => {
     note:document.getElementById('f_note').value, avatar:window._selAvatar,
     abbonamento:document.getElementById('f_abbonamento').value,
     importoAbbonamento:Number(document.getElementById('f_importo_abb').value),
-    dataIscrizione: id ? state.iscritti.find(i=>i.id===id)?.dataIscrizione : today()
+    dataIscrizione: id ? vecchio?.dataIscrizione : today()
   };
   await saveDoc('iscritti', d);
   if(state.dettaglio?.id===id) state.dettaglio=d;
+  // Crea primo pagamento se abbonamento appena impostato
+  const abbNuovo = d.abbonamento;
+  const abbVecchio = vecchio?.abbonamento || 'Nessuno';
+  const importo = d.importoAbbonamento;
+  if(abbNuovo && abbNuovo !== 'Nessuno' && importo > 0 && abbVecchio === 'Nessuno') {
+    // Controlla che non esista già un pagamento in attesa per questo iscritto
+    const esiste = state.pagamenti.some(p => p.iscrittoId === d.id && p.stato === 'In attesa');
+    if(!esiste) {
+      await saveDoc('pagamenti', {
+        id: Date.now(),
+        iscrittoId: d.id,
+        importo: importo,
+        tipo: abbNuovo,
+        data: today(),
+        metodo: 'Da definire',
+        stato: 'In attesa',
+        note: 'Primo pagamento ' + abbNuovo.toLowerCase()
+      });
+    }
+  }
   closeModal();
 };
 
