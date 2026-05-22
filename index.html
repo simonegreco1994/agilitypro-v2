@@ -1191,13 +1191,11 @@ window.salvaIscritto = async id => {
   };
   await saveDoc('iscritti', d);
   if(state.dettaglio?.id===id) state.dettaglio=d;
-  // Crea primo pagamento se abbonamento appena impostato
+  // Crea primo pagamento se ha abbonamento attivo e non esiste nessun pagamento
   const abbNuovo = d.abbonamento;
-  const abbVecchio = vecchio?.abbonamento || 'Nessuno';
   const importo = d.importoAbbonamento;
-  if(abbNuovo && abbNuovo !== 'Nessuno' && importo > 0 && abbVecchio === 'Nessuno') {
-    // Controlla che non esista già un pagamento in attesa per questo iscritto
-    const esiste = state.pagamenti.some(p => p.iscrittoId === d.id && p.stato === 'In attesa');
+  if(abbNuovo && abbNuovo !== 'Nessuno' && importo > 0) {
+    const esiste = state.pagamenti.some(p => p.iscrittoId === d.id);
     if(!esiste) {
       await saveDoc('pagamenti', {
         id: Date.now(),
