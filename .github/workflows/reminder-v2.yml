@@ -1,0 +1,153 @@
+name: AgilityPro V2 — Reminder Serale
+
+on:
+  workflow_dispatch:
+
+jobs:
+  send-reminder:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Manda reminder a addestratori e iscritti
+        env:
+          ONESIGNAL_APP_ID: ${{ secrets.ONESIGNAL_APP_ID }}
+          ONESIGNAL_API_KEY: ${{ secrets.ONESIGNAL_API_KEY }}
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
+        run: |
+          python3 - << 'PYEOF'
+          import urllib.request, json, os, calendar
+          from datetime import datetime, timedelta, timezone
+
+          ONESIGNAL_APP_ID = os.environ['ONESIGNAL_APP_ID']
+          ONESIGNAL_API_KEY = os.environ['ONESIGNAL_API_KEY']
+          PROJECT_ID = os.environ['FIREBASE_PROJECT_ID']
+          API_KEY = os.environ['FIREBASE_API_KEY']
+
+          base = f'https://firestore.googleapis.com/v1/projects/{PROJECT_ID}/databases/(default)/documents'
+
+          def get_field(doc, field):
+            f = doc.get('fields', {}).get(field, {})
+            for t in ['stringValue','integerValue','booleanValue','doubleValue']:
+              if t in f: return f[t]
+            return None
+
+          def get_docs(path):
+            try:
+              url = f'{base}/{path}?key={API_KEY}&pageSize=200'
+              with urllib.request.urlopen(url, timeout=10) as r:
+                return json.loads(r.read()).get('documents', [])
+            except Exception as e:
+              print(f'Errore {path}: {e}')
+              return []
+
+          def get_doc(path):
+            try:
+              url = f'{base}/{path}?key={API_KEY}'
+              with urllib.request.urlopen(url, timeout=10) as r:
+                return json.loads(r.read())
+            except:
+              return None
+
+          def send_onesignal(player_id, titolo, corpo):
+            payload = json.dumps({
+              'app_id': ONESIGNAL_APP_ID,
+              'include_subscription_ids': [player_id],
+              'headings': {'it': titolo, 'en': titolo},
+              'contents': {'it': corpo, 'en': corpo},
+              'url': 'https://simonegreco1994.github.io/',
+            }).encode()
+            req = urllib.request.Request(
+              'https://api.onesignal.com/notifications',
+              data=payload,
+              headers={'Content-Type': 'application/json', 'Authorization': f'Key {ONESIGNAL_API_KEY}'}
+            )
+            with urllib.request.urlopen(req, timeout=10) as r:
+              return json.loads(r.read())
+
+          # Ora italiana
+          now_utc = datetime.now(timezone.utc)
+          def is_dst(dt):
+            year = dt.year
+            mar = max(week[-1] for week in calendar.monthcalendar(year, 3))
+            oct_last = max(week[-1] for week in calendar.monthcalendar(year, 10))
+            return datetime(year,3,mar,1,tzinfo=timezone.utc) <= dt < datetime(year,10,oct_last,1,tzinfo=timezone.utc)
+          now_it = now_utc + timedelta(hours=2 if is_dst(now_utc) else 1)
+          target = now_it + timedelta(days=1)
+          target_str = target.strftime('%Y-%m-%d')
+          mesi = ['gennaio','febbraio','marzo','aprile','maggio','giugno',
+                  'luglio','agosto','settembre','ottobre','novembre','dicembre']
+          giorni_sett = ['lunedi','martedi','mercoledi','giovedi','venerdi','sabato','domenica']
+          target_label = giorni_sett[target.weekday()] + ' ' + str(target.day) + ' ' + mesi[target.month-1]
+          print(f'Target: {target_str} ({target_label})')
+
+          # Leggi tutti i subscribers
+          subscribers = get_docs('subscribers')
+          print(f'Subscribers: {len(subscribers)}')
+
+          for sub in subscribers:
+            uid = get_field(sub, 'uid') or sub['name'].split('/')[-1]
+            player_id = get_field(sub, 'playerId')
+            email = get_field(sub, 'email') or uid
+            attive = get_field(sub, 'attive')
+            ruolo = get_field(sub, 'ruolo') or 'addestratore'
+
+            if not attive or not player_id:
+              continue
+
+            print(f'\n--- {email} ({ruolo}) ---')
+
+            if ruolo == 'addestratore':
+              # Addestratore: riceve sempre il riepilogo completo
+              appuntamenti = get_docs(f'users/{uid}/appuntamenti')
+              iscritti_docs = get_docs(f'users/{uid}/iscritti')
+              iscritti = {str(get_field(d,'id') or d['name'].split('/')[-1]): d for d in iscritti_docs}
+              lezioni = [a for a in appuntamenti if get_field(a,'data') == target_str and get_field(a,'stato') != 'saltata']
+              lezioni.sort(key=lambda a: get_field(a,'ora') or '00:00')
+              if not lezioni:
+                titolo = 'AgilityPro'
+                corpo = f'Nessuna lezione {target_label}. Giornata libera!'
+              else:
+                n = len(lezioni)
+                titolo = f'AgilityPro - {n} lezione{"i" if n>1 else ""} {target_label}'
+                righe = []
+                for a in lezioni:
+                  ora = get_field(a,'ora') or '?'
+                  isc = iscritti.get(str(int(get_field(a,'iscrittoId') or 0)))
+                  nome = get_field(isc,'nome') if isc else '?'
+                  cane = get_field(isc,'cane') if isc else '?'
+                  rec = ' (recupero)' if get_field(a,'recuperoDi') else ''
+                  righe.append(f'{ora} - {nome} & {cane}{rec}')
+                corpo = '\n'.join(righe)
+
+            else:
+              # Iscritto: riceve notifica SOLO se ha lezione
+              addestratore_uid = get_field(sub, 'addestatoreUid')
+              iscritto_id = get_field(sub, 'iscrittoId')
+              if not addestratore_uid or not iscritto_id:
+                print('Dati incompleti, skip.')
+                continue
+              appuntamenti = get_docs(f'users/{addestratore_uid}/appuntamenti')
+              lezioni = [a for a in appuntamenti
+                if get_field(a,'data') == target_str
+                and get_field(a,'stato') != 'saltata'
+                and int(get_field(a,'iscrittoId') or 0) == int(iscritto_id)]
+              lezioni.sort(key=lambda a: get_field(a,'ora') or '00:00')
+              if not lezioni:
+                print('Nessuna lezione domani per questo iscritto, skip.')
+                continue
+              nome_iscritto = get_field(sub, 'nome') or email
+              n = len(lezioni)
+              titolo = f'AgilityPro - Hai {"una lezione" if n==1 else str(n)+" lezioni"} {target_label}!'
+              righe = [f'{get_field(a,"ora") or "?"} - {get_field(a,"titolo") or "Lezione"}' for a in lezioni]
+              corpo = '\n'.join(righe)
+
+            print(f'Titolo: {titolo}')
+            print(f'Corpo: {corpo}')
+            try:
+              result = send_onesignal(player_id, titolo, corpo)
+              print(f'OneSignal: {result}')
+            except Exception as e:
+              print(f'Errore invio: {e}')
+
+          print('\nDone!')
+          PYEOF
