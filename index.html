@@ -613,26 +613,28 @@ const initFirebase = () => {
   }
 
   const uid = dataUid();
-  const myIscrittoId = state.profilo?.iscrittoId || null;
+  const myIscrittoId = state.profilo?.iscrittoId ? Number(state.profilo.iscrittoId) : null;
+  console.log('initFirebase - uid:', uid, 'myIscrittoId:', myIscrittoId, 'ruolo:', state.ruolo);
 
   unsubscribers.push(onSnapshot(collection(db, 'users', uid, 'iscritti'), snap => {
     const tutti = snap.docs.map(d => ({ id: Number(d.id), ...d.data() }));
     state.iscritti = state.ruolo === 'iscritto'
-      ? tutti.filter(i => i.id === myIscrittoId)
+      ? tutti.filter(i => Number(i.id) === myIscrittoId)
       : tutti;
+    console.log('Iscritti caricati:', state.iscritti.length, 'filtrati per id:', myIscrittoId);
     if(!state.loaded) checkLoaded(); else render();
   }));
   unsubscribers.push(onSnapshot(collection(db, 'users', uid, 'pagamenti'), snap => {
     const tutti = snap.docs.map(d => ({ id: Number(d.id), ...d.data() }));
     state.pagamenti = state.ruolo === 'iscritto'
-      ? tutti.filter(p => p.iscrittoId === myIscrittoId)
+      ? tutti.filter(p => Number(p.iscrittoId) === myIscrittoId)
       : tutti;
     if(!state.loaded) checkLoaded(); else render();
   }));
   unsubscribers.push(onSnapshot(collection(db, 'users', uid, 'appuntamenti'), snap => {
     const tutti = snap.docs.map(d => ({ id: Number(d.id), ...d.data() }));
     state.appuntamenti = state.ruolo === 'iscritto'
-      ? tutti.filter(a => a.iscrittoId === myIscrittoId)
+      ? tutti.filter(a => Number(a.iscrittoId) === myIscrittoId)
       : tutti;
     if(!state.loaded) checkLoaded(); else render();
   }));
@@ -654,10 +656,16 @@ onAuthStateChanged(auth, async (user) => {
         state.profilo = profiloDoc.data();
         state.ruolo = state.profilo.ruolo || 'addestratore';
         state.addestatoreUid = state.profilo.addestatoreUid || null;
+        console.log('Ruolo:', state.ruolo, 'AddestatoreUID:', state.addestatoreUid);
       } else {
         state.ruolo = 'addestratore';
+        state.addestatoreUid = null;
       }
-    } catch(e) { state.ruolo = 'addestratore'; }
+    } catch(e) {
+      console.error('Errore caricamento profilo:', e);
+      state.ruolo = 'addestratore';
+      state.addestatoreUid = null;
+    }
     if(!state.loaded) initFirebase();
   } else {
     state.user = null;
