@@ -1612,35 +1612,85 @@ function renderIscritto() {
           </div>`).join('')}
       </div>
 
-      <!-- Richiedi recupero -->
+      <!-- Notifiche -->
       <div class="card">
-        <div class="card-title">🔄 Richiedi Recupero</div>
-        <p style="font-size:13px;color:var(--sub);margin-bottom:12px;line-height:1.6">Hai saltato una lezione? Invia una richiesta di recupero al tuo addestratore.</p>
-        <button class="btn-primary" style="width:100%" id="richiestaRecuperoBtn">📩 Invia richiesta</button>
+        <div class="card-title">🔔 Notifiche Lezioni</div>
+        <p style="font-size:13px;color:var(--sub);margin-bottom:12px;line-height:1.6">
+          Attiva le notifiche per ricevere un reminder quando hai una lezione il giorno dopo.
+        </p>
+        <div class="info-row" style="margin-bottom:16px">
+          <span class="info-label">Stato</span>
+          <span class="info-value" id="statoNotIscrittoLabel" style="color:var(--sub)">Controllo...</span>
+        </div>
+        <button class="btn-primary" style="width:100%;margin-bottom:8px" id="toggleNotIscrittoBtn">🔔 Attiva notifiche</button>
+        <div id="notIscrittoMsg" style="font-size:13px;text-align:center;min-height:16px;font-weight:600"></div>
       </div>
 
       <!-- Logout -->
-      <button class="btn-danger" style="width:100%;margin-top:8px" onclick="doLogout()">🚪 Esci</button>
+      <button class="btn-danger" style="width:100%;margin-top:8px" id="iscrittoLogoutBtn">🚪 Esci</button>
     </div>`;
 
-  // Bind richiesta recupero
-  document.getElementById('richiestaRecuperoBtn')?.addEventListener('click', () => {
-    showModal(`
-      <div class="modal-title">🔄 Richiesta Recupero</div>
-      <div class="form-field"><label class="form-label">DATA PREFERITA</label>
-        <input class="form-input" type="date" id="f_data_rich" value="">
-      </div>
-      <div class="form-field"><label class="form-label">ORA PREFERITA</label>
-        <input class="form-input" type="time" id="f_ora_rich" value="10:00">
-      </div>
-      <div class="form-field"><label class="form-label">NOTE</label>
-        <textarea class="form-input" id="f_note_rich" rows="3" placeholder="Es. Disponibile martedì e giovedì pomeriggio"></textarea>
-      </div>
-      <div class="modal-footer">
-        <button class="btn-secondary" type="button" onclick="closeModal()">Annulla</button>
-        <button class="btn-primary" type="button" onclick="inviaRichiestaRecupero()">Invia</button>
-      </div>
-    `);
+  // Logout
+  document.getElementById('iscrittoLogoutBtn')?.addEventListener('click', window.doLogout);
+
+  // Notifiche iscritto
+  const showNotMsg = (txt, ok=true) => {
+    const el = document.getElementById('notIscrittoMsg');
+    if(el) { el.textContent=txt; el.style.color=ok?'var(--green)':'#e74c3c'; }
+  };
+  const playerId = localStorage.getItem('ap_onesignal_player_id');
+  const statoEl = document.getElementById('statoNotIscrittoLabel');
+  const btnNot = document.getElementById('toggleNotIscrittoBtn');
+  if(playerId) {
+    if(statoEl) { statoEl.textContent='✅ Attive'; statoEl.style.color='var(--green)'; }
+    if(btnNot) { btnNot.textContent='🔕 Disattiva notifiche'; btnNot.classList.replace('btn-primary','btn-danger'); }
+  } else {
+    if(statoEl) { statoEl.textContent='⏸ Non attive'; statoEl.style.color='var(--orange)'; }
+  }
+
+  btnNot?.addEventListener('click', async () => {
+    if(localStorage.getItem('ap_onesignal_player_id')) {
+      // Disattiva
+      localStorage.removeItem('ap_onesignal_player_id');
+      if(window.OneSignal) await OneSignal.User.PushSubscription.optOut();
+      try {
+        await setDoc(doc(db, 'subscribers', state.user.uid), {
+          playerId:'', uid:state.user.uid, email:state.user?.email||'',
+          attive:false, ruolo:'iscritto',
+          addestatoreUid: state.addestatoreUid,
+          iscrittoId: state.profilo?.iscrittoId
+        });
+      } catch(e) {}
+      showNotMsg('Notifiche disattivate.');
+      renderIscritto(); return;
+    }
+    // Attiva
+    const isIOSPWA = ('standalone' in navigator && navigator.standalone);
+    const isSafariNoPWA = /^((?!chrome|android).)*safari/i.test(navigator.userAgent) && !isIOSPWA;
+    if(isSafariNoPWA) { showNotMsg('Apri dall'app in Home Screen per le notifiche.', false); return; }
+    if(!window.OneSignal) { showNotMsg('Ricarica la pagina e riprova.', false); return; }
+    try {
+      showNotMsg('Attivazione...');
+      await OneSignal.User.PushSubscription.optIn();
+      const optedIn = await OneSignal.User.PushSubscription.optedIn;
+      if(optedIn) {
+        const pid = OneSignal.User.PushSubscription.id;
+        if(pid) {
+          localStorage.setItem('ap_onesignal_player_id', pid);
+          await setDoc(doc(db, 'subscribers', state.user.uid), {
+            playerId: pid, uid: state.user.uid, email: state.user.email||'',
+            attive: true, ruolo: 'iscritto',
+            addestatoreUid: state.addestatoreUid,
+            iscrittoId: state.profilo?.iscrittoId,
+            nome: state.user.displayName||''
+          });
+        }
+        showNotMsg('Notifiche attivate! Riceverai un reminder quando hai lezione.');
+        renderIscritto();
+      } else {
+        showNotMsg('Permesso non concesso. Abilitalo nelle impostazioni.', false);
+      }
+    } catch(e) { showNotMsg('Errore: ' + e.message, false); }
   });
 }
 
